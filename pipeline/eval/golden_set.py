@@ -31,7 +31,7 @@ or filter by difficulty: `[q for q in GOLDEN_SET if q["difficulty"] == "easy"]`.
 import os
 
 
-def get_dataset_name(base: str = "northbrook_golden_v1") -> str:
+def get_dataset_name(base: str = "northbrook_golden_v2") -> str:
     """Return the per-student Phoenix dataset name.
 
     Phoenix datasets live at the WORKSPACE level, not the project level — so
@@ -365,11 +365,63 @@ GOLDEN_SET = [
             },
         ],
     },
+    # ─── STUDENT-ADDED CASES (Lab 2 — Sunil) ────────────────────────────
+    # Three new queries chosen to fill coverage gaps observed in the
+    # baseline set: health benefits (most common HR question type, not
+    # tested), bereavement (narrow policy lookup), and a true out-of-scope
+    # query to exercise the refusal path that no other entry tests.
+
+    # 16. Health benefits — common HR query, no existing coverage
+    {
+        "id": "sb_health_benefits",
+        "question": "What health benefits does Northbrook offer?",
+        "expected_answer": (
+            "Northbrook offers comprehensive health benefits including medical, "
+            "dental, and vision coverage to eligible full-time employees. "
+            "Specific plan details, premiums, and enrollment windows are "
+            "documented in the employee handbook and benefits summary."
+        ),
+        "expected_source": ["employee_handbook.md"],
+        "category": "policy_lookup",
+        "difficulty": "easy",
+        "history": [],
+    },
+
+    # 17. Narrow lookup — bereavement policy (mentioned but not previously tested)
+    {
+        "id": "sb_bereavement_policy",
+        "question": "What is the bereavement leave policy?",
+        "expected_answer": (
+            "Northbrook provides up to 3 days of bereavement leave for "
+            "immediate family members (spouse, child, parent, sibling), and "
+            "1 day for the loss of a pet. This is in addition to other "
+            "paid time off categories."
+        ),
+        "expected_source": ["vacation_policy_2025.md"],
+        "category": "policy_lookup",
+        "difficulty": "easy",
+        "history": [],
+    },
+
+    # 18. Out-of-scope — first entry exercising the refusal path
+    {
+        "id": "sb_payroll_issue_contact",
+        "question": "Who should I contact if there's a problem with my paycheck this week?",
+        "expected_answer": (
+            "Northbrook's HR documents do not include a specific payroll-issue "
+            "contact or escalation procedure. The assistant should decline to "
+            "guess and direct the employee to contact HR directly for help."
+        ),
+        "expected_source": [],
+        "category": "out_of_scope",
+        "difficulty": "easy",
+        "history": [],
+    },
 ]
 
 
 # Quick sanity checks — also useful for students to explore
-assert len(GOLDEN_SET) == 15, "Golden set must have exactly 15 queries (10 single-turn + 5 multi-turn)"
+assert len(GOLDEN_SET) == 18, "Golden set must have 18 queries (10 single-turn + 5 multi-turn + 3 student-added)"
 assert all("expected_answer" in q for q in GOLDEN_SET), "Every query needs an expected answer"
 assert all(isinstance(q["expected_source"], list) for q in GOLDEN_SET), \
     "expected_source must be a list (even if it has one element)"

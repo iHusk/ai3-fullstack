@@ -38,8 +38,12 @@ except ImportError:
 
 import streamlit as st
 import yaml
+from dotenv import load_dotenv
 from app.branding import apply_branding
 from app.rag import get_response
+from app.feedback import submit_feedback, get_feedback_summary
+
+load_dotenv(_PROJECT_ROOT / ".env")
 
 # === DEPLOYMENT: API KEYS ===
 with st.sidebar:
@@ -65,6 +69,23 @@ os.environ["ANTHROPIC_API_KEY"] = anthropic_key
 os.environ["VOYAGE_API_KEY"] = voyage_key
 # === END DEPLOYMENT ===
 # ============================================================
+
+# ============================================================
+# PHOENIX TRACING INITIALIZATION
+# ============================================================
+if "phoenix_initialized" not in st.session_state:
+    try:
+        from phoenix.otel import register
+        register(
+            project_name=os.getenv("PHOENIX_PROJECT_NAME", "ai3"),
+            auto_instrument=True,
+        )
+    except Exception:
+        pass
+    st.session_state.phoenix_initialized = True
+
+if "session_id" not in st.session_state:
+    st.session_state.session_id = str(uuid.uuid4())
 
 # ============================================================
 # LOAD CONFIG & APPLY BRANDING
@@ -148,11 +169,76 @@ with st.sidebar:
     msg_count = len(st.session_state.get("messages", []))
     st.write(f"Messages: {msg_count}")
 
+    summary = get_feedback_summary()
+    if summary["total"] > 0:
+        st.write(
+            f"Feedback: {summary['positive']} :thumbsup: / "
+            f"{summary['negative']} :thumbsdown:"
+        )
+
     if st.button("Clear Chat"):
         st.session_state.messages = []
         if st.session_state.current_chat:
             st.session_state.conversations[st.session_state.current_chat] = []
         st.rerun()
+
+
+# ============================================================
+# FEEDBACK HELPERS
+# ============================================================
+def _save_feedback(index):
+    """Callback: save thumbs rating and submit to Phoenix."""
+    feedback_value = st.session_state[f"fb_{index}"]
+    st.session_state.messages[index]["feedback"] = feedback_value
+    span_id = st.session_state.messages[index].get("span_id", "")
+    if span_id:
+        submit_feedback(span_id, feedback_value)
+    st.session_state.conversations[st.session_state.current_chat] = (
+        st.session_state.messages.copy()
+    )
+    if feedback_value == 1:
+        st.toast("Thanks for the positive feedback!")
+    else:
+        st.toast("Thanks — you can add details below.")
+
+
+def _save_feedback_note(index):
+    """Callback: submit text note for negative feedback."""
+    note = st.session_state.get(f"note_{index}", "")
+    if not note:
+        return
+    span_id = st.session_state.messages[index].get("span_id", "")
+    if span_id:
+        submit_feedback(span_id, 0, note=note)
+    st.session_state.messages[index]["feedback_note"] = note
+    st.session_state.conversations[st.session_state.current_chat] = (
+        st.session_state.messages.copy()
+    )
+    st.toast("Detailed feedback submitted!")
+
+
+def render_feedback(index):
+    """Render thumbs widget + optional text input for a message."""
+    message = st.session_state.messages[index]
+    existing_fb = message.get("feedback", None)
+    st.session_state[f"fb_{index}"] = existing_fb
+    st.feedback(
+        "thumbs",
+        key=f"fb_{index}",
+        disabled=existing_fb is not None,
+        on_change=_save_feedback,
+        args=[index],
+    )
+    if existing_fb == 0 and not message.get("feedback_note"):
+        st.text_input(
+            "What went wrong?",
+            key=f"note_{index}",
+            placeholder="Help us improve (press Enter to submit)",
+            on_change=_save_feedback_note,
+            args=[index],
+        )
+    elif message.get("feedback_note"):
+        st.caption(f"Your note: _{message['feedback_note']}_")
 
 
 # ============================================================
@@ -168,9 +254,11 @@ if not st.session_state.get("messages"):
         st.markdown(welcome)
 
 # Display all previous messages
-for message in st.session_state.get("messages", []):
+for i, message in enumerate(st.session_state.get("messages", [])):
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
+        if message["role"] == "assistant":
+            render_feedback(i)
 
 
 # ============================================================
@@ -221,13 +309,27 @@ if prompt := st.chat_input("Ask a question..."):
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    response = get_response(prompt, st.session_state.messages)
+    try:
+        from openinference.instrumentation import using_attributes
+        with using_attributes(
+            session_id=st.session_state.session_id,
+            user_id="student",
+            tags=["streamlit"],
+        ):
+            response = get_response(prompt, st.session_state.messages)
+    except ImportError:
+        response = get_response(prompt, st.session_state.messages)
+
+    st.session_state.messages.append({
+        "role": "assistant",
+        "content": response.answer,
+        "span_id": response.span_id,
+    })
+    st.session_state.conversations[st.session_state.current_chat] = (
+        st.session_state.messages.copy()
+    )
 
     with st.chat_message("assistant"):
         st.markdown(response.answer)
         display_sources(response.sources)
-
-    st.session_state.messages.append({"role": "assistant", "content": response.answer})
-    st.session_state.conversations[st.session_state.current_chat] = (
-        st.session_state.messages.copy()
-    )
+        render_feedback(len(st.session_state.messages) - 1)

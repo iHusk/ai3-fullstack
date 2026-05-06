@@ -27,6 +27,11 @@ COPY scripts/ scripts/
 COPY .streamlit/ .streamlit/
 COPY student_config.yaml .
 
+# ChromaDB (pre-populated vector store, ~13MB).
+# Required so the deployed app has the same retrieval corpus as local dev —
+# Community Cloud's filesystem is ephemeral, so we ship the data IN the image.
+COPY chroma_db/ chroma_db/
+
 # Expose Streamlit port
 EXPOSE 8501
 

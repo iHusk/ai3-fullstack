@@ -1,5 +1,4 @@
 .venv/
-chroma_db/
 notebooks/
 .git/
 __pycache__/

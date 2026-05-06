@@ -8,3 +8,11 @@
 .streamlit/static/** merge=ours
 student_config.yaml merge=ours
 app/branding.py merge=ours
+
+# Line-ending control for cross-platform launcher scripts (Session 4.1).
+# Mac/Linux shell scripts must stay LF — CRLF makes /usr/bin/env bash fail.
+# Windows PowerShell and cmd scripts stay CRLF.
+*.sh           text eol=lf
+scripts/run.sh text eol=lf
+*.ps1          text eol=crlf
+*.cmd          text eol=crlf

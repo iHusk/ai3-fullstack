@@ -21,20 +21,15 @@ Session 1.1: We build these functions together in class.
 
 from pathlib import Path
 
-from dotenv import load_dotenv
-
-# Load .env from the repo root so ANTHROPIC_API_KEY is available
-# before we instantiate the client.  Without this, any import of
-# hyde.py fails with an AuthenticationError.
-_ENV_PATH = Path(__file__).resolve().parent.parent.parent / ".env"
-load_dotenv(_ENV_PATH)
-
 import anthropic
 
 from pipeline.embeddings.embed import embed_texts
 from pipeline.ingestion.store import get_collection
 
-client = anthropic.Anthropic()
+
+def _get_client():
+    """Lazy Anthropic client — instantiated on first call, after env keys are set."""
+    return anthropic.Anthropic()
 
 
 # ─── CUSTOMIZABLE: Hypothetical answer prompt ──────────────────────
@@ -56,6 +51,7 @@ def generate_hypothetical_answer(question: str, domain: str = "company") -> str:
     Returns:
         A short hypothetical answer string (2-3 sentences).
     """
+    client = _get_client()
     message = client.messages.create(
         model="claude-sonnet-4-5",
         max_tokens=256,

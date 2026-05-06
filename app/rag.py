@@ -35,18 +35,15 @@ _ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(_ENV_PATH)
 
 
-# ─── RETRIEVAL STRATEGY ───────────────────────────────────────
-# Which retrieval function to use for finding relevant chunks.
-# Default: naive_retrieve (pure semantic similarity).
+# ─── RETRIEVAL STRATEGY (Lab 2: HyDE + Voyage rerank-2) ───────
+# HyDE generates a hypothetical answer first, then embeds THAT answer for
+# search — closing the question/answer embedding gap. Then we rerank the
+# top-N candidates with a Voyage cross-encoder for precision.
 #
-# For Lab 2, swap this import to change your retrieval strategy:
-#   from pipeline.retrieval.hyde import hyde_retrieve as retrieve
-#   from pipeline.retrieval.enriched import enriched_retrieve as retrieve
-#
-# The retrieve function must accept (question: str, top_k: int)
-# and return list[dict] with keys: text, metadata, score.
+# Pattern: hyde_retrieve(top_k=20) → rerank(top_k=5)
 # ──────────────────────────────────────────────────────────────
-from pipeline.retrieval.naive import naive_retrieve as retrieve
+from pipeline.retrieval.hyde import hyde_retrieve as retrieve
+from pipeline.retrieval.reranker import rerank
 
 from pipeline.generation.generate import call_claude
 from pipeline.context.assembler import contextualize_query, assemble_context
@@ -151,24 +148,36 @@ def get_response(question: str, messages: list[dict]) -> ChatResponse:
         rewritten = contextualize_query(managed_history, question)
 
         # ─── RETRIEVAL PARAMETERS (customization section 5 of 7) ─
-        # How many chunks to retrieve and quality thresholds.
-        # top_k: number of chunks to fetch (more = broader context,
-        #         but costs more tokens and may add noise).
-        #
-        # After retrieval, you could also filter by score threshold:
-        #   sources = [s for s in sources if s["score"] > 0.35]
+        # HyDE+rerank pattern: over-fetch with bi-encoder recall, then
+        # re-score with the cross-encoder for precision.
+        #   TOP_K_RETRIEVE = 20  → broad candidate pool
+        #   TOP_K_FINAL    = 5   → precision-ranked context for Claude
         # ──────────────────────────────────────────────────────────
+        TOP_K_RETRIEVE = 20
+        TOP_K_FINAL = 5
+
         with _tracer.start_as_current_span("retrieve_chunks") as ret_span:
             ret_span.set_attribute("openinference.span.kind", "RETRIEVER")
             ret_span.set_attribute("input.value", rewritten)
-            sources = retrieve(rewritten, top_k=5)
-            ret_span.set_attribute("retrieve.top_k", 5)
-            ret_span.set_attribute("retrieve.n_results", len(sources))
-            if sources:
-                ret_span.set_attribute("retrieve.sources",
-                    ", ".join(s.get("metadata", {}).get("source", "") for s in sources))
-                ret_span.set_attribute("retrieve.top_score", float(sources[0].get("score", 0)))
+            candidates = retrieve(rewritten, top_k=TOP_K_RETRIEVE)
+            ret_span.set_attribute("retrieve.top_k", TOP_K_RETRIEVE)
+            ret_span.set_attribute("retrieve.n_results", len(candidates))
+            if candidates:
+                ret_span.set_attribute("retrieve.top_score", float(candidates[0].get("score", 0)))
             ret_span.set_status(StatusCode.OK)
+
+        with _tracer.start_as_current_span("rerank_chunks") as rerank_span:
+            rerank_span.set_attribute("openinference.span.kind", "RERANKER")
+            rerank_span.set_attribute("input.value", rewritten)
+            sources = rerank(rewritten, candidates, top_k=TOP_K_FINAL)
+            rerank_span.set_attribute("rerank.top_k", TOP_K_FINAL)
+            rerank_span.set_attribute("rerank.n_results", len(sources))
+            if sources:
+                rerank_span.set_attribute("rerank.sources",
+                    ", ".join(s.get("metadata", {}).get("source", "") for s in sources))
+                if "rerank_score" in sources[0]:
+                    rerank_span.set_attribute("rerank.top_score", float(sources[0]["rerank_score"]))
+            rerank_span.set_status(StatusCode.OK)
 
         if not sources:
             return ChatResponse(

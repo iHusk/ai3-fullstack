@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(PYTHONUTF8=1 uv run *)"
+    ]
+  }
+}

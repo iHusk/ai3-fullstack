@@ -46,8 +46,14 @@ from pipeline.eval.tasks import (
     rewrite_only_task,
     assemble_only_task,
     rewrite_and_assemble_task,
+    hyde_task,
+    hyde_plus_rerank_task,
 )
-from pipeline.eval.evaluators import retrieval_hit, answer_addresses_question
+from pipeline.eval.evaluators import (
+    retrieval_hit,
+    answer_addresses_question,
+    citation_grounding,
+)
 
 load_dotenv()
 
@@ -63,26 +69,28 @@ GOLDEN_DATASET_NAME = get_dataset_name()
 
 # Evaluators are a list. Phoenix uses each function's __name__ as the
 # column label in the UI. Keep function names descriptive.
+# Lab 2 adds citation_grounding (deterministic source-grounding check).
 CORRECTNESS_EVALUATORS = [
     retrieval_hit,
     answer_addresses_question,
+    citation_grounding,
 ]
 
 # Each entry is (experiment_label, task_function). We run one experiment
 # per pipeline so the comparison lives natively in Phoenix.
 #
-# Session 2.2 study: isolating contextualize_query and assemble_context.
-#   - naive_baseline_v2:    re-baseline against the v2 dataset (15 rows w/ multi-turn)
-#   - rewrite_only:         contextualize_query=ON, assemble_context=OFF
-#   - assemble_only:        contextualize_query=OFF, assemble_context=ON
-#   - rewrite_and_assemble: both ON (matches what app/rag.py runs in production)
-# hyde_task is intentionally excluded — we already have hyde scores from prior
-# runs and including it would muddy the comparison.
+# Lab 2 strategy comparison on the extended (18-query) golden set:
+#   - lab2_naive_baseline:  control — current 3.1 retrieval, for the "before" numbers
+#   - lab2_hyde_only:       isolates HyDE's contribution
+#   - lab2_hyde_plus_rerank: ship config — HyDE recall + rerank precision
+#
+# Session 2.2 context-management variants are intentionally omitted — we
+# already have those from the baseline run and including them muddies the
+# strategy comparison.
 CORRECTNESS_PIPELINES = [
-    ("naive_baseline_v2", naive_task),
-    ("rewrite_only", rewrite_only_task),
-    ("assemble_only", assemble_only_task),
-    ("rewrite_and_assemble", rewrite_and_assemble_task),
+    ("lab2_naive_baseline", naive_task),
+    ("lab2_hyde_only", hyde_task),
+    ("lab2_hyde_plus_rerank", hyde_plus_rerank_task),
 ]
 
 

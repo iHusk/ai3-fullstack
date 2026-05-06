@@ -365,11 +365,73 @@ GOLDEN_SET = [
             },
         ],
     },
+
+    # ─── LAB 2 EXTENSIONS (Mazgaj) ─────────────────────────────────────
+    # Three new golden cases targeting gaps in the v1 set:
+    #   16. Out-of-scope refusal — measures whether the hardened prompt
+    #       actually refuses non-corpus questions.
+    #   17. Hard cross-document synthesis — forces retrieval to cover two
+    #       independent policy docs in a single answer (where naive often
+    #       drops one); a key win condition for the reranker.
+    #   18. Numeric precision — answer hinges on a specific dollar figure;
+    #       lets us measure whether HyDE+rerank surfaces the exact chunk.
+
+    # 16. Out-of-scope refusal (no source — the answer should refuse)
+    {
+        "id": "out_of_scope_stock_price",
+        "question": "What is Northbrook Partners' current stock price?",
+        "expected_answer": (
+            "I don't have enough information to answer that question. The "
+            "Northbrook documents do not contain stock price information."
+        ),
+        "expected_source": [],  # nothing should be retrieved with high confidence
+        "category": "out_of_scope",
+        "difficulty": "easy",
+        "history": [],
+    },
+
+    # 17. Hard cross-document synthesis — expense_policy + remote_work_policy
+    {
+        "id": "remote_home_office_expense",
+        "question": (
+            "Can a fully remote employee expense their home office internet, "
+            "and what's the equipment stipend they receive?"
+        ),
+        "expected_answer": (
+            "Fully remote employees receive a $1,500 equipment stipend per "
+            "the remote work policy. Expense reimbursement requires expenses "
+            "to be business-related and submitted within 30 days with itemized "
+            "receipts; home internet is not listed among the explicitly covered "
+            "categories, so it would need to be handled through the standard "
+            "business-expense rules."
+        ),
+        "expected_source": ["remote_work_policy.md", "expense_policy.md"],
+        "category": "multi_doc",
+        "difficulty": "hard",
+        "history": [],
+    },
+
+    # 18. Numeric precision — exact dollar figure ($1,500 stipend)
+    {
+        "id": "remote_stipend_exact",
+        "question": "How much is the remote work equipment stipend?",
+        "expected_answer": (
+            "The remote work equipment stipend is $1,500 for eligible remote "
+            "employees, per the remote work policy."
+        ),
+        "expected_source": ["remote_work_policy.md"],
+        "category": "policy_lookup",
+        "difficulty": "easy",
+        "history": [],
+    },
 ]
 
 
 # Quick sanity checks — also useful for students to explore
-assert len(GOLDEN_SET) == 15, "Golden set must have exactly 15 queries (10 single-turn + 5 multi-turn)"
+assert len(GOLDEN_SET) == 18, (
+    "Golden set must have exactly 18 queries "
+    "(10 single-turn + 5 multi-turn + 3 Lab 2 extensions)"
+)
 assert all("expected_answer" in q for q in GOLDEN_SET), "Every query needs an expected answer"
 assert all(isinstance(q["expected_source"], list) for q in GOLDEN_SET), \
     "expected_source must be a list (even if it has one element)"

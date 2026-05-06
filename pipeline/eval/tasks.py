@@ -190,6 +190,53 @@ def hyde_task(input: dict) -> dict:
     return {"question": question, **result}
 
 
+# ─── LAB 2 — HyDE + Voyage rerank-2 ────────────────────────────────────
+# Over-fetches with hyde_retrieve(top_k=20), then reorders with the
+# cross-encoder and keeps the top 5. Mirrors what app/rag.py runs in
+# production after the Lab 2 changes.
+
+LAB2_TOP_K_RETRIEVE = 20
+LAB2_TOP_K_FINAL = 5
+
+
+def hyde_plus_rerank_task(input: dict) -> dict:
+    """Run HyDE retrieval + Voyage rerank-2 reranking on one dataset example.
+
+    Steps:
+        1. hyde_retrieve(question, top_k=20) — broad recall via hypothetical answer
+        2. rerank(question, candidates, top_k=5) — precision via cross-encoder
+        3. build_prompt + call_claude — same as naive/hyde tasks
+
+    Args:
+        input: A dict like {"question": "What is the vacation policy?"}.
+
+    Returns:
+        {"question": ..., "chunks": [...], "answer": ...}
+    """
+    from pipeline.retrieval.hyde import hyde_retrieve
+    from pipeline.retrieval.reranker import rerank
+
+    question = input["question"]
+    candidates = hyde_retrieve(question, LAB2_TOP_K_RETRIEVE)
+    chunks = rerank(question, candidates, top_k=LAB2_TOP_K_FINAL)
+
+    if not chunks:
+        return {
+            "question": question,
+            "chunks": [],
+            "answer": "I couldn't find relevant information in the Northbrook documents.",
+        }
+
+    system_prompt, user_message = build_prompt(question, chunks)
+    result = call_claude_with_usage(
+        prompt=user_message,
+        system_prompt=system_prompt,
+        temperature=0.0,
+    )
+
+    return {"question": question, "chunks": chunks, "answer": result["text"]}
+
+
 # ─── SESSION 2.2 CONTEXT-MANAGEMENT EXPERIMENTS ─────────────────────────
 # Three task variants that toggle contextualize_query and assemble_context
 # independently. All three use naive_retrieve; the differences are isolated

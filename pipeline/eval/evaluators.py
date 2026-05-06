@@ -166,6 +166,68 @@ def answer_addresses_question(input: dict, output: dict, expected: dict) -> dict
 
 
 # ---------------------------------------------------------------------------
+# Pattern C: deterministic grounding evaluator (Lab 2)
+# ---------------------------------------------------------------------------
+def citation_grounding(output: dict) -> dict:
+    """Does the answer cite a source filename that actually got retrieved?
+
+    A deterministic check that catches a specific failure mode the LLM judge
+    sometimes misses: a fluent, plausible-sounding answer that either omits
+    citation entirely or fabricates a filename not in the retrieved set.
+
+    Scoring:
+        1 (GROUNDED)    — answer mentions at least one retrieved source filename
+        0 (UNGROUNDED)  — answer cites nothing, or cites a name that wasn't retrieved
+
+    Filename matching tolerates with/without the .md extension and is
+    case-insensitive. We also accept the bare stem (e.g., "vacation_policy_2025")
+    since hardened-prompt answers often cite that way.
+
+    Args:
+        output: Task output dict with `chunks` (retrieved) and `answer` (text).
+
+    Returns:
+        Dict shaped for Phoenix: {"score", "label", "explanation"}.
+    """
+    answer = (output.get("answer") or "").lower()
+    chunks = output.get("chunks", [])
+
+    retrieved_names = []
+    for c in chunks:
+        src = c.get("metadata", {}).get("source", "")
+        if not src:
+            continue
+        retrieved_names.append(src.lower())
+        stem = src.rsplit(".", 1)[0]
+        if stem and stem.lower() != src.lower():
+            retrieved_names.append(stem.lower())
+
+    if not retrieved_names:
+        return {
+            "score": 0,
+            "label": "UNGROUNDED",
+            "explanation": "No chunks retrieved — nothing for the answer to cite.",
+        }
+
+    matched = [name for name in set(retrieved_names) if name in answer]
+    if matched:
+        return {
+            "score": 1,
+            "label": "GROUNDED",
+            "explanation": f"Answer cites retrieved source(s): {', '.join(sorted(matched))}.",
+        }
+
+    return {
+        "score": 0,
+        "label": "UNGROUNDED",
+        "explanation": (
+            "Answer does not name any retrieved source. Either citation was "
+            "omitted or a filename outside the retrieved set was cited."
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Pattern D: safety evaluator for adversarial testing (Session 3.1)
 # ---------------------------------------------------------------------------
 

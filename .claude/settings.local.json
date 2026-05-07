@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(PYTHONUTF8=1 uv run *)"
+      "Bash(PYTHONUTF8=1 uv run *)",
+      "Bash(findstr /n /c:\"subprocess\" \"c:\\\\AI -ODSA\\\\ai3-fullstack\\\\notebooks\\\\4_1\\\\session_4_1.ipynb\")",
+      "Bash(findstr /v \"//\")",
+      "Bash(PYTHONUTF8=1 PYTHONIOENCODING=utf-8 uv run *)",
+      "Bash(uv run python -c ' *)"
     ]
   }
 }

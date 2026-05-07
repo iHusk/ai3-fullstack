@@ -32,6 +32,17 @@ def apply_branding(config: dict) -> None:
         [data-testid="stSidebar"], [data-testid="stSidebar"] * {
             color: #3A1F12 !important;
         }
+        /* Widget labels (text_input, etc.) and subheaders use BaseWeb attributes
+           that escape the wildcard above — force them dark explicitly. */
+        [data-testid="stSidebar"] [data-testid="stWidgetLabel"],
+        [data-testid="stSidebar"] [data-testid="stWidgetLabel"] *,
+        [data-testid="stSidebar"] label,
+        [data-testid="stSidebar"] label *,
+        [data-testid="stSidebar"] h2,
+        [data-testid="stSidebar"] h3 {
+            color: #3A1F12 !important;
+            opacity: 1 !important;
+        }
         [data-testid="stSidebar"] h1 {
             font-family: serif;
             border-bottom: 3px solid #D49729;

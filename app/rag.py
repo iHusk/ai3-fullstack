@@ -51,11 +51,15 @@ load_dotenv(_ENV_PATH)
 from pipeline.retrieval.rrf import rrf_retrieve as retrieve
 from pipeline.safety.guards import validate_input, validate_output, FALLBACK_RESPONSE
 
-from pipeline.generation.generate import call_claude
+from pipeline.generation.generate import call_claude, call_claude_with_usage
 from pipeline.context.assembler import contextualize_query, assemble_context
 from pipeline.context.manager import manage_history
+from pipeline.observability.logger import PipelineLogger, StageTimer
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
+
+# Matches the import alias above — update this when switching strategies.
+STRATEGY_NAME = "rrf"
 
 _tracer = trace.get_tracer("rag-pipeline")
 
@@ -144,6 +148,8 @@ def get_response(question: str, messages: list[dict]) -> ChatResponse:
                 span_id=span_id,
             )
 
+        _log = PipelineLogger(query=question, strategy=STRATEGY_NAME)
+
         # --- HISTORY MANAGEMENT -----------------------------------------------
         # Lab 2: reduced from 10 -> 8 messages (4 exchanges).
         # RRF chunks are longer on average; trimming one exchange saves ~200
@@ -168,8 +174,15 @@ def get_response(question: str, messages: list[dict]) -> ChatResponse:
         with _tracer.start_as_current_span("retrieve_chunks") as ret_span:
             ret_span.set_attribute("openinference.span.kind", "RETRIEVER")
             ret_span.set_attribute("input.value", rewritten)
-            sources = retrieve(rewritten, top_k=7)
-            sources = [s for s in sources if s.get("score", 1.0) > 0.0025]
+            with StageTimer() as _ret_timer:
+                sources = retrieve(rewritten, top_k=7)
+                sources = [s for s in sources if s.get("score", 1.0) > 0.0025]
+            _log.log_retrieve(
+                latency_ms=_ret_timer.elapsed_ms,
+                n_results=len(sources),
+                scores=[s.get("score", 0.0) for s in sources],
+                sources=[s.get("metadata", {}).get("source", "") for s in sources],
+            )
             ret_span.set_attribute("retrieve.top_k", 7)
             ret_span.set_attribute("retrieve.n_results", len(sources))
             if sources:
@@ -220,7 +233,18 @@ def get_response(question: str, messages: list[dict]) -> ChatResponse:
         with _tracer.start_as_current_span("generate_answer") as gen_span:
             gen_span.set_attribute("openinference.span.kind", "LLM")
             gen_span.set_attribute("input.value", user_message)
-            answer = call_claude(user_message, system_prompt=_SYSTEM_PROMPT, temperature=0.1)
+            with StageTimer() as _gen_timer:
+                gen_result = call_claude_with_usage(
+                    user_message, system_prompt=_SYSTEM_PROMPT, temperature=0.1
+                )
+            answer = gen_result["text"]
+            _log.log_generate(
+                latency_ms=_gen_timer.elapsed_ms,
+                model=gen_result.get("model", "claude-sonnet-4-5"),
+                input_tokens=gen_result.get("input_tokens", 0),
+                output_tokens=gen_result.get("output_tokens", 0),
+                stop_reason=gen_result.get("stop_reason", ""),
+            )
             gen_span.set_attribute("output.value", answer[:500])
             gen_span.set_status(StatusCode.OK)
 
@@ -234,6 +258,8 @@ def get_response(question: str, messages: list[dict]) -> ChatResponse:
             pipeline_span.set_attribute("safety.output_blocked", True)
             pipeline_span.set_attribute("safety.output_reason", _reason)
             answer = FALLBACK_RESPONSE
+
+        _log.finalize()
 
         return ChatResponse(answer=answer, sources=sources,
                             rewritten_query=rewritten, span_id=span_id)

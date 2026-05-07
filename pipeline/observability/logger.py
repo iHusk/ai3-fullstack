@@ -76,9 +76,10 @@ class PipelineLogger:
     a JSONL file.
     """
 
-    def __init__(self, query: str):
+    def __init__(self, query: str, strategy: str = "unknown"):
         self.query_id = str(uuid.uuid4())[:8]
         self.query = query
+        self.strategy = strategy
         self.stages: dict[str, dict] = {}
         self.timestamp = datetime.now().isoformat()
 
@@ -135,6 +136,7 @@ class PipelineLogger:
         return {
             "query_id": self.query_id,
             "query": self.query,
+            "strategy": self.strategy,
             "timestamp": self.timestamp,
             "stages": self.stages,
             "total_latency_ms": total_latency,

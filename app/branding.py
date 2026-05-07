@@ -38,6 +38,18 @@ def apply_branding(config: dict) -> None:
         color: #E0E0E0 !important;
         border-color: #555 !important;
     }
+    [data-testid="stSidebar"] input {
+        color: #1a1a1a !important;
+        caret-color: #1a1a1a !important;
+    }
+    [data-testid="stSidebar"] [data-testid="tooltipIcon"] svg {
+        fill: #E0E0E0 !important;
+        color: #E0E0E0 !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stPasswordInput"] button svg {
+        fill: #E0E0E0 !important;
+        color: #E0E0E0 !important;
+    }
     [data-testid="stChatInput"] textarea {
         color: #F2F2F2 !important;
     }

@@ -64,44 +64,38 @@ if "phoenix_initialized" not in st.session_state:
 if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
 
+# Load config and apply branding (CSS must be injected before any st.stop())
+with open(_PROJECT_ROOT / "student_config.yaml") as f:
+    config = yaml.safe_load(f)
 
+apply_branding(config)
 
 # ==============================================================
 # === DEPLOYMENT: API KEYS ===
 # Per-visitor key entry. No keys baked into the deployed app —
 # anyone with the URL would burn the owner's credits.
-# Keys live in os.environ for this session only — lost on refresh.
+# Keys are stored in st.session_state (per-browser-session) so
+# they never leak to other visitors via os.environ.
 # ==============================================================
 with st.sidebar:
     st.subheader("API Keys")
     anthropic_key = st.text_input(
         "Anthropic API Key",
         type="password",
-        value=os.getenv("ANTHROPIC_API_KEY", ""),
+        key="anthropic_key",
         help="Get one at console.anthropic.com",
     )
     voyage_key = st.text_input(
         "Voyage API Key",
         type="password",
-        value=os.getenv("VOYAGE_API_KEY", ""),
+        key="voyage_key",
         help="Get one at voyageai.com",
     )
 
 if not anthropic_key or not voyage_key:
     st.warning("Enter both API keys in the sidebar to start chatting.")
     st.stop()
-
-os.environ["ANTHROPIC_API_KEY"] = anthropic_key
-os.environ["VOYAGE_API_KEY"] = voyage_key
 # === END DEPLOYMENT ===
-
-# ============================================================
-# LOAD CONFIG & APPLY BRANDING
-# ============================================================
-with open(_PROJECT_ROOT / "student_config.yaml") as f:
-    config = yaml.safe_load(f)
-
-apply_branding(config)
 
 # ============================================================
 # STEP 1: Initialize Session State

@@ -26,6 +26,36 @@ load_dotenv()
 BATCH_SIZE = 128
 
 
+def _get_voyage_client():
+    """Lazy Voyage AI client.
+
+    Inside a Streamlit script run: requires the per-session key in
+    ``st.session_state["voyage_key"]``. Raises if it is not set,
+    so we never silently fall through to the deploy's process env
+    (which would bill whichever key happens to be cached there).
+
+    Outside Streamlit (notebooks, scripts, tests): falls back to the
+    ``VOYAGE_API_KEY`` env var so existing usage keeps working.
+    """
+    try:
+        from streamlit.runtime.scriptrunner import get_script_run_ctx
+        in_streamlit = get_script_run_ctx() is not None
+    except Exception:
+        in_streamlit = False
+
+    if in_streamlit:
+        import streamlit as st
+        key = st.session_state.get("voyage_key", "")
+        if not key:
+            raise RuntimeError(
+                "Voyage API key not found in session state. "
+                "Enter your key in the sidebar to continue."
+            )
+        return voyageai.Client(api_key=key)
+
+    return voyageai.Client()
+
+
 def get_embedding(text: str, model: str = "voyage-3-lite") -> list[float]:
     """Generate an embedding vector for a single piece of text.
 
@@ -36,7 +66,7 @@ def get_embedding(text: str, model: str = "voyage-3-lite") -> list[float]:
     Returns:
         A list of floats representing the embedding vector.
     """
-    client = voyageai.Client()
+    client = _get_voyage_client()
 
     result = client.embed(texts=[text], model=model)
 
@@ -56,7 +86,7 @@ def embed_texts(texts: list[str], model: str = "voyage-3-lite") -> list[list[flo
     Returns:
         A list of embedding vectors, one per input text.
     """
-    client = voyageai.Client()
+    client = _get_voyage_client()
 
     all_embeddings = []
 

@@ -56,34 +56,10 @@ with open(_PROJECT_ROOT / "student_config.yaml") as f:
 
 apply_branding(config)
 
-# ==============================================================
-# === DEPLOYMENT: API KEYS ===
-# Per-visitor key entry. No keys baked into the deployed app —
-# anyone with the URL would burn the owner's credits.
-# Keys live in os.environ for this session only — lost on refresh.
-# ==============================================================
-with st.sidebar:
-    st.subheader("API Keys")
-    anthropic_key = st.text_input(
-        "Anthropic API Key",
-        type="password",
-        value=os.getenv("ANTHROPIC_API_KEY", ""),
-        help="Get one at console.anthropic.com",
-    )
-    voyage_key = st.text_input(
-        "Voyage API Key",
-        type="password",
-        value=os.getenv("VOYAGE_API_KEY", ""),
-        help="Get one at voyageai.com",
-    )
-
-if not anthropic_key or not voyage_key:
-    st.warning("Enter both API keys in the sidebar to start chatting.")
+# Keys loaded from .env at top of file via load_dotenv()
+if not os.getenv("ANTHROPIC_API_KEY") or not os.getenv("VOYAGE_API_KEY"):
+    st.error("ANTHROPIC_API_KEY and VOYAGE_API_KEY must be set in your .env file.")
     st.stop()
-
-os.environ["ANTHROPIC_API_KEY"] = anthropic_key
-os.environ["VOYAGE_API_KEY"] = voyage_key
-# === END DEPLOYMENT ===
 
 # Initialize Phoenix tracing ONCE per session
 if "phoenix_initialized" not in st.session_state:
@@ -252,19 +228,60 @@ for i, message in enumerate(st.session_state.get("messages", [])):
 
 
 # ============================================================
-# STEP 4: Source Display Helper (PROVIDED — do not modify)
+# STEP 4: Source Display Helper
 # ============================================================
-def display_sources(sources: list[dict]):
-    """Show retrieved sources in a collapsible expander."""
+def display_sources(sources: list[dict], original_query: str = "", rewritten_query: str = ""):
+    """Show pipeline details and retrieved sources in collapsible expanders."""
+    from app.rag import STRATEGY_NAME
+
+    _STRATEGY_LABELS = {
+        "naive": "Naive semantic search",
+        "rrf":   "Reciprocal Rank Fusion (naive + enriched)",
+        "hyde":  "HyDE (Hypothetical Document Embeddings)",
+    }
+    strategy_label = _STRATEGY_LABELS.get(STRATEGY_NAME, STRATEGY_NAME)
+    query_was_rewritten = bool(rewritten_query and rewritten_query != original_query)
+
+    with st.expander("Pipeline Details", expanded=False):
+        st.markdown("**Input**")
+        if query_was_rewritten:
+            st.markdown(f"- Query rewrite (contextualize): **on**")
+            st.caption(f"Original: _{original_query}_")
+            st.caption(f"Rewritten: _{rewritten_query}_")
+        else:
+            st.markdown(f"- Query rewrite (contextualize): off — query used as-is")
+        st.markdown(f"- Retrieval strategy: **{strategy_label}** · {len(sources)} chunks retrieved")
+
+        st.markdown("**Output**")
+        st.markdown("- Context assembly: **on** — chunks grouped by source, sorted by chunk index")
+        st.markdown("- Input safety validation: **on** — override / roleplay / extraction patterns checked")
+        st.markdown("- Output safety validation: **on** — prompt leakage and credential patterns checked")
+
     if sources:
-        with st.expander(f"Sources ({len(sources)})"):
-            for i, src in enumerate(sources, 1):
-                name = src["metadata"].get("source", "Unknown")
-                score = src.get("score", 0.0)
-                st.markdown(f"**{i}. {name}** (relevance: {score:.2f})")
-                st.caption(src["text"][:200] + "...")
+        # Group chunks by source document for a cleaner display
+        grouped: dict[str, list[dict]] = {}
+        for src in sources:
+            doc = src["metadata"].get("source", "Unknown")
+            grouped.setdefault(doc, []).append(src)
+
+        with st.expander(f"Sources — {len(grouped)} document(s), {len(sources)} chunk(s)", expanded=False):
+            for doc_name, chunks in grouped.items():
+                st.markdown(f"**{doc_name}**")
+                for chunk in chunks:
+                    score = chunk.get("score", 0.0)
+                    chunk_idx = chunk["metadata"].get("chunk_index", "?")
+                    rrf_src = chunk.get("rrf_sources", "")
+                    meta_parts = [f"chunk {chunk_idx}", f"relevance {score:.3f}"]
+                    if rrf_src and rrf_src != "naive":
+                        meta_parts.append(f"fused via {rrf_src}")
+                    st.caption(" · ".join(meta_parts))
+                    snippet = chunk["text"][:350]
+                    if len(chunk["text"]) > 350:
+                        snippet += "…"
+                    st.markdown(f"> {snippet}")
+                st.divider()
     else:
-        st.caption("No sources — answering from general knowledge.")
+        st.caption("No sources retrieved — answer drawn from model knowledge only.")
 
 
 # ============================================================
@@ -297,6 +314,6 @@ if prompt := st.chat_input("Ask a question..."):
 
     with st.chat_message("assistant"):
         st.markdown(response.answer)
-        display_sources(response.sources)
+        display_sources(response.sources, original_query=prompt, rewritten_query=response.rewritten_query)
         render_feedback(len(st.session_state.messages) - 1)
 # ============================================================

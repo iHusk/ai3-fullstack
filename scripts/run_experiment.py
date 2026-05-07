@@ -43,6 +43,7 @@ from phoenix.client import Client
 from pipeline.eval.golden_set import get_dataset_name
 from pipeline.eval.tasks import (
     naive_task,
+    rrf_task,
     rewrite_only_task,
     assemble_only_task,
     rewrite_and_assemble_task,
@@ -80,6 +81,7 @@ CORRECTNESS_EVALUATORS = [
 # runs and including it would muddy the comparison.
 CORRECTNESS_PIPELINES = [
     ("naive_baseline_v2", naive_task),
+    ("rrf", rrf_task),
     ("rewrite_only", rewrite_only_task),
     ("assemble_only", assemble_only_task),
     ("rewrite_and_assemble", rewrite_and_assemble_task),

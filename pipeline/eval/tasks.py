@@ -19,6 +19,8 @@ Students explore by:
     - Inspecting what `naive_task({"question": "..."})` returns locally
 """
 
+from pathlib import Path
+
 from pipeline.retrieval.naive import naive_retrieve, build_prompt
 from pipeline.generation.generate import call_claude_with_usage
 from pipeline.context.assembler import (
@@ -26,6 +28,9 @@ from pipeline.context.assembler import (
     assemble_context,
     naive_assemble,
 )
+from pipeline.observability.logger import PipelineLogger, StageTimer
+
+_LOG_DIR = str(Path(__file__).resolve().parent.parent.parent / "logs")
 
 # Note: hyde_retrieve is imported lazily inside hyde_task() because students
 # build it during Session 1.1. On a fresh clone before 1.1, this module would
@@ -48,7 +53,7 @@ _CONTEXT_SYSTEM_PROMPT = (
 )
 
 
-def _run_pipeline(question: str, retrieve_fn) -> dict:
+def _run_pipeline(question: str, retrieve_fn, strategy: str = "unknown") -> dict:
     """Shared helper: retrieve chunks, build the RAG prompt, call Claude.
 
     Both naive_task and hyde_task use this — the only difference between
@@ -59,25 +64,44 @@ def _run_pipeline(question: str, retrieve_fn) -> dict:
         question: The user query to answer.
         retrieve_fn: A function with the same contract as `naive_retrieve`
             (takes a question + top_k, returns list of {text, metadata, score}).
+        strategy: Label written to pipeline.jsonl for Tableau slicing.
 
     Returns:
         A dict with `chunks` (what retrieval found) and `answer` (what
         generation produced). This shape is what Phoenix passes to evaluators
         as the `output` parameter.
     """
+    _log = PipelineLogger(query=question, strategy=strategy)
+
     # Step 1: retrieval — get the top_k chunks for this question
-    chunks = retrieve_fn(question, TOP_K)  # positional — hyde uses n_results, naive uses top_k
+    with StageTimer() as _ret:
+        chunks = retrieve_fn(question, TOP_K)
+    _log.log_retrieve(
+        latency_ms=_ret.elapsed_ms,
+        n_results=len(chunks),
+        scores=[c.get("score", 0.0) for c in chunks],
+        sources=[c.get("metadata", {}).get("source", "") for c in chunks],
+    )
 
     # Step 2: prompt assembly — format chunks as a context block for Claude
     system_prompt, user_message = build_prompt(question, chunks)
 
     # Step 3: generation — call Claude with temperature=0.0 for reproducibility
     # (so scores are stable across runs of the same experiment)
-    result = call_claude_with_usage(
-        prompt=user_message,
-        system_prompt=system_prompt,
-        temperature=0.0,
+    with StageTimer() as _gen:
+        result = call_claude_with_usage(
+            prompt=user_message,
+            system_prompt=system_prompt,
+            temperature=0.0,
+        )
+    _log.log_generate(
+        latency_ms=_gen.elapsed_ms,
+        model=result.get("model", "claude-sonnet-4-5"),
+        input_tokens=result.get("input_tokens", 0),
+        output_tokens=result.get("output_tokens", 0),
+        stop_reason=result.get("stop_reason", ""),
     )
+    _log.finalize(log_dir=_LOG_DIR)
 
     return {
         "chunks": chunks,           # Evaluators inspect this for retrieval quality
@@ -166,7 +190,7 @@ def naive_task(input: dict) -> dict:
         {"question": ..., "chunks": [...], "answer": ...}
     """
     question = input["question"]
-    result = _run_pipeline(question, naive_retrieve)
+    result = _run_pipeline(question, naive_retrieve, strategy="naive")
     return {"question": question, **result}
 
 
@@ -186,7 +210,7 @@ def hyde_task(input: dict) -> dict:
     from pipeline.retrieval.hyde import hyde_retrieve  # lazy — see note at top
 
     question = input["question"]
-    result = _run_pipeline(question, hyde_retrieve)
+    result = _run_pipeline(question, hyde_retrieve, strategy="hyde")
     return {"question": question, **result}
 
 
@@ -203,7 +227,7 @@ def rrf_task(input: dict) -> dict:
     from pipeline.retrieval.rrf import rrf_retrieve
 
     question = input["question"]
-    result = _run_pipeline(question, rrf_retrieve)
+    result = _run_pipeline(question, rrf_retrieve, strategy="rrf")
     return {"question": question, **result}
 
 

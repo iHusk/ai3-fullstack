@@ -33,3 +33,8 @@ cache/
 # Instructor-only files (local only, never pushed to students)
 *_instructor*
 _dry_run*.py
+
+# Secrets: ignore rendered env files, keep templates
+.env.*
+!.env.tpl
+!.env.example
